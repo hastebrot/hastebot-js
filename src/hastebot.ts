@@ -53,7 +53,8 @@ let readMessageText = (segments) => {
 }
 
 let matchCommand = (...commands) => {
-  return (message) => _.some(commands, (it: string) => _.startsWith(_.toLower(message), it))
+  return (message) => _.some(commands, (command) => _.startsWith(command, "!") ? 
+    _.toLower(message) === command : _.startsWith(_.toLower(message), command))
 }
 
 let botConversations = []
@@ -97,7 +98,7 @@ client.on("chat_message", event => {
   if (isEnabled) {
     if (matchCommand("!quote count")(message)) {
       client.sendchatmessage(conversation_id, buildMessage(
-        "has " + quotes.length + " quotes available (0 new quotes pending)"
+        "has " + quotes.length + " quotes available and " + 0 + " pending"
       ))
     }
     else if (matchCommand("!quote", "quote!")(message)) {
