@@ -4,6 +4,7 @@
   "description": "",
   "author": "",
   "license": "EUPL",
+  "private": true,
   "scripts": {
     "start": "node app/hastebot.js"
   },
