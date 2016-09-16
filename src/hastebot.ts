@@ -2,9 +2,10 @@
 // IMPORTS.
 //-------------------------------------------------------------------------------------------------
 
-let path = require("path")
-let _ = require("lodash")
-let Q = require("q")
+import * as path from "path"
+import * as _ from "lodash"
+import * as Q from "q"
+
 let Client = require("hangupsjs")
 
 //-------------------------------------------------------------------------------------------------
