@@ -7,9 +7,10 @@ import * as _ from "lodash"
 import * as Q from "q"
 
 let Client = require("hangupsjs")
+let storage = require("node-persist")
 
 //-------------------------------------------------------------------------------------------------
-// CLIENT.
+// CONNECTIONS.
 //-------------------------------------------------------------------------------------------------
 
 let client = new Client({
@@ -31,6 +32,9 @@ client.connect(() => credentials).then(() => {
     console.log("self_entity:", self_entity)
   })
 }).done()
+
+let store = storage
+store.initSync({dir:  path.resolve(__dirname, "../data/store")})
 
 //-------------------------------------------------------------------------------------------------
 // MESSAGES.
@@ -57,9 +61,9 @@ let matchCommand = (...commands) => {
     _.toLower(message) === command : _.startsWith(_.toLower(message), command))
 }
 
-let botConversations = []
-
-let quotes = require(path.resolve(__dirname, "../data/quotes")).quotes || []
+const BOT_CONVERSATIONS = "BOT_CONVERSATIONS"
+const QUOTES_STORED = "QUOTES_STORED"
+const QUOTES_PENDING = "QUOTES_PENDING"
 
 client.on("chat_message", event => {
   let self_user_id = event.self_event_state.user_id.chat_id
@@ -69,7 +73,7 @@ client.on("chat_message", event => {
 
   let isAdmin = sender_id === self_user_id
   let isDebug = false
-  let isEnabled = _.includes(botConversations, conversation_id)
+  let isEnabled = _.includes(store.getItemSync(BOT_CONVERSATIONS) || [], conversation_id)
 
   let message = readMessageText(message_segments)
   console.log(sender_id, JSON.stringify(message))
@@ -85,25 +89,37 @@ client.on("chat_message", event => {
   // hastebotConfig.ts
   if (isAdmin) {
     if (matchCommand("!bot on")(message)) {
-      botConversations = _.uniq(_.concat(botConversations, conversation_id))
+      store.setItemSync(BOT_CONVERSATIONS, 
+        _.uniq(_.concat(store.getItemSync(BOT_CONVERSATIONS) || [], conversation_id)))
       client.sendchatmessage(conversation_id, buildMessage("is now enabled"))
     }
     else if (matchCommand("!bot off")(message)) {
-      botConversations = _.uniq(_.without(botConversations, conversation_id))
+      store.setItemSync(BOT_CONVERSATIONS, 
+        _.uniq(_.without(store.getItemSync(BOT_CONVERSATIONS) || [], conversation_id)))
       client.sendchatmessage(conversation_id, buildMessage("is now disabled"))
     }
   }
 
   // hastebotQuotes.ts
   if (isEnabled) {
+    let quotes = store.getItemSync(QUOTES_STORED) || []
+    let quotesPending = store.getItemSync(QUOTES_PENDING) || []
+
     if (matchCommand("!quote count")(message)) {
       client.sendchatmessage(conversation_id, buildMessage(
-        "has " + quotes.length + " quotes available and " + 0 + " pending"
+        "has " + quotes.length + " quotes available and " + quotesPending.length + " pending"
       ))
     }
     else if (matchCommand("!quote", "quote!")(message)) {
       let quote = _.sample(quotes)
       client.sendchatmessage(conversation_id, buildMessage(quote))
+    }
+    else if (matchCommand("quote")(message)) {
+      let quote = message
+      store.setItemSync(QUOTES_PENDING, _.concat(store.getItemSync(QUOTES_PENDING) || [], message))
+      client.sendchatmessage(conversation_id, buildMessage(
+        "has " + quotes.length + " quotes available and " + (quotesPending.length + 1) + " pending"
+      ))
     }
   }
 })
