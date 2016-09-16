@@ -44,6 +44,18 @@ let buildMessage = (text) => {
   return segments
 }
 
+let readMessageText = (segments) => {
+  return _.chain(segments)
+    .filter(it => it.type === "TEXT" || it.type === "LINE_BREAK")
+    .map(it => it.text)
+    .reduce((message, text) => message + text, "")
+    .value()
+}
+
+let matchCommand = (...commands) => {
+  return (message) => _.some(commands, (it: string) => _.startsWith(_.toLower(message), it))
+}
+
 let botConversations = []
 
 let quotes = require(path.resolve(__dirname, "../data/quotes")).quotes || []
@@ -58,13 +70,9 @@ client.on("chat_message", event => {
   let isDebug = false
   let isEnabled = _.includes(botConversations, conversation_id)
 
-  let message = _.chain(message_segments)
-    .filter(it => it.type === "TEXT")
-    .map(it => it.text)
-    .reduce((message, text) => message + text, "")
-    .value()
-  console.log(sender_id, message)
-
+  let message = readMessageText(message_segments)
+  console.log(sender_id, JSON.stringify(message))
+  
   // hastebotDebug.ts
   if (isDebug) {
     console.log("self_user_id:", self_user_id)
@@ -75,11 +83,11 @@ client.on("chat_message", event => {
 
   // hastebotConfig.ts
   if (isAdmin) {
-    if (_.startsWith(message, "!bot on")) {
+    if (matchCommand("!bot on")(message)) {
       botConversations = _.uniq(_.concat(botConversations, conversation_id))
       client.sendchatmessage(conversation_id, buildMessage("is now enabled"))
     }
-    else if (_.startsWith(message, "!bot off")) {
+    else if (matchCommand("!bot off")(message)) {
       botConversations = _.uniq(_.without(botConversations, conversation_id))
       client.sendchatmessage(conversation_id, buildMessage("is now disabled"))
     }
@@ -87,12 +95,12 @@ client.on("chat_message", event => {
 
   // hastebotQuotes.ts
   if (isEnabled) {
-    if (_.startsWith(_.toLower(message), "!quote count")) {
+    if (matchCommand("!quote count")(message)) {
       client.sendchatmessage(conversation_id, buildMessage(
         "has " + quotes.length + " quotes available (0 new quotes pending)"
       ))
     }
-    else if (_.startsWith(_.toLower(message), "!quote") || _.startsWith(_.toLower(message), "quote!")) {
+    else if (matchCommand("!quote", "quote!")(message)) {
       let quote = _.sample(quotes)
       client.sendchatmessage(conversation_id, buildMessage(quote))
     }
