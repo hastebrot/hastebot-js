@@ -132,7 +132,7 @@ messenger.on("chat_message", event => {
     if (matchCommand(`?${COMMAND_QUOTE}`, 
                      `? ${COMMAND_QUOTE}`, 
                      `${COMMAND_QUOTE}?`, 
-                     `${COMMAND_QUOTE} count`)(message)) {
+                     `!${COMMAND_QUOTE} count`)(message)) {
       messenger.sendchatmessage(conversation_id, buildMessage(
         "has " + quotes.length + " quotes available and " + quotesPending.length + " pending"
       ))
