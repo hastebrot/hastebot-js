@@ -13,28 +13,43 @@ let storage = require("node-persist")
 // CONNECTIONS.
 //-------------------------------------------------------------------------------------------------
 
+let timestamp = () => new Date().toISOString()
+
 let client = new Client({
   cookiespath: path.resolve(__dirname, "../data/cookies.json"),
   rtokenpath: path.resolve(__dirname, "../data/refreshtoken.txt")
 })
 
-//client.loglevel("debug")
+let store = storage
+store.initSync({
+  dir: path.resolve(__dirname, "../data/store")
+})
+
+//client.loglevel("info")
 //client.logout()
+store.persistSync()
 
 let credentials = {
   auth: Client.authStdin
 }
 
-client.connect(() => credentials).then(() => {
-  console.log("client connected")
-  client.getselfinfo().then(event => {
-    let self_entity = event.self_entity.id.chat_id
-    console.log("self_entity:", self_entity)
-  })
-}).done()
+let onConnected = () => {
+  console.log(timestamp(), "client connected")
+  //client.getselfinfo().then(event => {
+  //  let self_entity = event.self_entity.id.chat_id
+  //  console.log("self_entity:", self_entity)
+  //})
+}
 
-let store = storage
-store.initSync({dir:  path.resolve(__dirname, "../data/store")})
+console.log(timestamp(), "client connecting...")
+client.connect(() => credentials).then(onConnected)
+
+client.on("connect_failed", () => {
+  Q.Promise((resolve) => setTimeout(resolve, 3000)).then(() => {
+    console.log(timestamp(), "client reconnecting...")
+    client.connect(() => credentials).then(onConnected)
+  });
+})
 
 //-------------------------------------------------------------------------------------------------
 // MESSAGES.
@@ -57,8 +72,8 @@ let readMessageText = (segments) => {
 }
 
 let matchCommand = (...commands) => {
-  return (message) => _.some(commands, (command) => _.startsWith(command, "!") ? 
-    _.toLower(message) === command : _.startsWith(_.toLower(message), command))
+  return (message) => _.some(commands, (command) => _.startsWith(command, "!") ?
+    _.toLower(_.trim(message)) === command : _.startsWith(_.toLower(_.trim(message)), command))
 }
 
 const BOT_CONVERSATIONS = "BOT_CONVERSATIONS"
@@ -75,9 +90,6 @@ client.on("chat_message", event => {
   let isDebug = false
   let isEnabled = _.includes(store.getItemSync(BOT_CONVERSATIONS) || [], conversation_id)
 
-  let message = readMessageText(message_segments)
-  console.log(sender_id, JSON.stringify(message))
-  
   // hastebotDebug.ts
   if (isDebug) {
     console.log("self_user_id:", self_user_id)
@@ -86,6 +98,9 @@ client.on("chat_message", event => {
     console.log("message segments", message_segments)
   }
 
+  let message = readMessageText(message_segments)
+  console.log(sender_id, JSON.stringify(message))
+  
   // hastebotConfig.ts
   if (isAdmin) {
     if (matchCommand("!bot on")(message)) {
