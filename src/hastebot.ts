@@ -13,9 +13,11 @@ let storage = require("node-persist")
 // CONNECTIONS.
 //-------------------------------------------------------------------------------------------------
 
+const RECONNECT_TIMEOUT_MILLIS = 3000
+
 let timestamp = () => new Date().toISOString()
 
-let client = new Client({
+let messenger = new Client({
   cookiespath: path.resolve(__dirname, "../data/cookies.json"),
   rtokenpath: path.resolve(__dirname, "../data/refreshtoken.txt")
 })
@@ -42,13 +44,13 @@ let onConnected = () => {
 }
 
 console.log(timestamp(), "client connecting...")
-client.connect(() => credentials).then(onConnected)
+messenger.connect(() => credentials).then(onConnected)
 
-client.on("connect_failed", () => {
-  Q.Promise((resolve) => setTimeout(resolve, 3000)).then(() => {
+messenger.on("connect_failed", () => {
+  Q.Promise((resolve) => setTimeout(resolve, RECONNECT_TIMEOUT_MILLIS)).then(() => {
     console.log(timestamp(), "client reconnecting...")
-    client.connect(() => credentials).then(onConnected)
-  });
+    messenger.connect(() => credentials).then(onConnected)
+  })
 })
 
 //-------------------------------------------------------------------------------------------------
@@ -83,7 +85,7 @@ const BOT_CONVERSATIONS = "BOT_CONVERSATIONS"
 const QUOTES_STORED = "QUOTES_STORED"
 const QUOTES_PENDING = "QUOTES_PENDING"
 
-client.on("chat_message", event => {
+messenger.on("chat_message", event => {
   let self_user_id = event.self_event_state.user_id.chat_id
   let conversation_id = event.conversation_id.id
   let sender_id = event.sender_id.chat_id
@@ -112,13 +114,13 @@ client.on("chat_message", event => {
                      `! ${COMMAND_BOT} on`)(message)) {
       store.setItemSync(BOT_CONVERSATIONS,
         _.uniq(_.concat(store.getItemSync(BOT_CONVERSATIONS) || [], conversation_id)))
-      client.sendchatmessage(conversation_id, buildMessage("is now enabled"))
+      messenger.sendchatmessage(conversation_id, buildMessage("is now enabled"))
     }
     else if (matchCommand(`!${COMMAND_BOT} off`, 
                           `! ${COMMAND_BOT} off`)(message)) {
       store.setItemSync(BOT_CONVERSATIONS,
         _.uniq(_.without(store.getItemSync(BOT_CONVERSATIONS) || [], conversation_id)))
-      client.sendchatmessage(conversation_id, buildMessage("is now disabled"))
+      messenger.sendchatmessage(conversation_id, buildMessage("is now disabled"))
     }
   }
 
@@ -131,7 +133,7 @@ client.on("chat_message", event => {
                      `? ${COMMAND_QUOTE}`, 
                      `${COMMAND_QUOTE}?`, 
                      `${COMMAND_QUOTE} count`)(message)) {
-      client.sendchatmessage(conversation_id, buildMessage(
+      messenger.sendchatmessage(conversation_id, buildMessage(
         "has " + quotes.length + " quotes available and " + quotesPending.length + " pending"
       ))
     }
@@ -139,14 +141,14 @@ client.on("chat_message", event => {
                           `! ${COMMAND_QUOTE}`, 
                           `${COMMAND_QUOTE}!`)(message)) {
       let quote = _.sample(quotes)
-      client.sendchatmessage(conversation_id, buildMessage(quote))
+      messenger.sendchatmessage(conversation_id, buildMessage(quote))
     }
     else if (matchCommand(`${COMMAND_QUOTE}`)(message)) {
       let quote = message
       let quotesPendingNext = _.uniq(_.concat(quotesPending, message))
       if (quotesPending.length !== quotesPendingNext.length) {
         store.setItemSync(QUOTES_PENDING, quotesPendingNext)
-        client.sendchatmessage(conversation_id, buildMessage(
+        messenger.sendchatmessage(conversation_id, buildMessage(
           "has " + quotesPendingNext.length + " new quotes pending"
         ))
       }
