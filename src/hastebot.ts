@@ -76,6 +76,9 @@ let matchCommand = (...commands) => {
     _.toLower(_.trim(message)) === command : _.startsWith(_.toLower(_.trim(message)), command))
 }
 
+const COMMAND_BOT = "bot"
+const COMMAND_QUOTE = "quote"
+
 const BOT_CONVERSATIONS = "BOT_CONVERSATIONS"
 const QUOTES_STORED = "QUOTES_STORED"
 const QUOTES_PENDING = "QUOTES_PENDING"
@@ -99,17 +102,21 @@ client.on("chat_message", event => {
   }
 
   let message = readMessageText(message_segments)
-  console.log(sender_id, JSON.stringify(message))
+  if (isEnabled) {
+    console.log(sender_id, JSON.stringify(message))
+  }
   
   // hastebotConfig.ts
   if (isAdmin) {
-    if (matchCommand("!bot on")(message)) {
-      store.setItemSync(BOT_CONVERSATIONS, 
+    if (matchCommand(`!${COMMAND_BOT} on`, 
+                     `! ${COMMAND_BOT} on`)(message)) {
+      store.setItemSync(BOT_CONVERSATIONS,
         _.uniq(_.concat(store.getItemSync(BOT_CONVERSATIONS) || [], conversation_id)))
       client.sendchatmessage(conversation_id, buildMessage("is now enabled"))
     }
-    else if (matchCommand("!bot off")(message)) {
-      store.setItemSync(BOT_CONVERSATIONS, 
+    else if (matchCommand(`!${COMMAND_BOT} off`, 
+                          `! ${COMMAND_BOT} off`)(message)) {
+      store.setItemSync(BOT_CONVERSATIONS,
         _.uniq(_.without(store.getItemSync(BOT_CONVERSATIONS) || [], conversation_id)))
       client.sendchatmessage(conversation_id, buildMessage("is now disabled"))
     }
@@ -120,21 +127,29 @@ client.on("chat_message", event => {
     let quotes = store.getItemSync(QUOTES_STORED) || []
     let quotesPending = store.getItemSync(QUOTES_PENDING) || []
 
-    if (matchCommand("!quote count")(message)) {
+    if (matchCommand(`?${COMMAND_QUOTE}`, 
+                     `? ${COMMAND_QUOTE}`, 
+                     `${COMMAND_QUOTE}?`, 
+                     `${COMMAND_QUOTE} count`)(message)) {
       client.sendchatmessage(conversation_id, buildMessage(
         "has " + quotes.length + " quotes available and " + quotesPending.length + " pending"
       ))
     }
-    else if (matchCommand("!quote", "quote!")(message)) {
+    else if (matchCommand(`!${COMMAND_QUOTE}`, 
+                          `! ${COMMAND_QUOTE}`, 
+                          `${COMMAND_QUOTE}!`)(message)) {
       let quote = _.sample(quotes)
       client.sendchatmessage(conversation_id, buildMessage(quote))
     }
-    else if (matchCommand("quote")(message)) {
+    else if (matchCommand(`${COMMAND_QUOTE}`)(message)) {
       let quote = message
-      store.setItemSync(QUOTES_PENDING, _.concat(store.getItemSync(QUOTES_PENDING) || [], message))
-      client.sendchatmessage(conversation_id, buildMessage(
-        "has " + quotes.length + " quotes available and " + (quotesPending.length + 1) + " pending"
-      ))
+      let quotesPendingNext = _.uniq(_.concat(quotesPending, message))
+      if (quotesPending.length !== quotesPendingNext.length) {
+        store.setItemSync(QUOTES_PENDING, quotesPendingNext)
+        client.sendchatmessage(conversation_id, buildMessage(
+          "has " + quotesPendingNext.length + " new quotes pending"
+        ))
+      }
     }
   }
 })
