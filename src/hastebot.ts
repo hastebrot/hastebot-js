@@ -100,6 +100,7 @@ let onMessage = (event, context) => {
       store.setItemSync(BOT_CONVERSATIONS,
         _.uniq(_.concat(store.getItemSync(BOT_CONVERSATIONS) || [], context.conversation_id)))
       messenger.sendchatmessage(context.conversation_id, buildMessage("is now enabled"))
+      isEnabled = true
     }
     else if (matchCommand(`!${COMMAND_BOT} off`, 
                           `! ${COMMAND_BOT} off`)(message)) {
