@@ -5,6 +5,7 @@
 import * as path from "path"
 import * as _ from "lodash"
 import * as Q from "q"
+import * as moment from "moment"
 
 let Client = require("hangupsjs")
 let storage = require("node-persist")
@@ -13,9 +14,11 @@ let storage = require("node-persist")
 // CONNECTIONS.
 //-------------------------------------------------------------------------------------------------
 
+const DEBUG_MODE = false
 const RECONNECT_TIMEOUT_MILLIS = 3000
 
-let timestamp = () => new Date().toISOString()
+let timestamp = () => `<${moment().format("YYYY-MM-DD hh:mm:ss")}>`
+let duration = (start) => `(${moment().diff(start, "ms")} ms)`
 
 let messenger = new Client({
   cookiespath: path.resolve(__dirname, "../data/cookies.json"),
@@ -35,27 +38,32 @@ let credentials = {
   auth: Client.authStdin
 }
 
-let onConnected = () => {
-  console.log(timestamp(), "client connected")
-  //client.getselfinfo().then(event => {
-  //  let self_entity = event.self_entity.id.chat_id
-  //  console.log("self_entity:", self_entity)
-  //})
+let onConnected = (context) => {
+  console.log(timestamp(), "messenger connected", duration(context.timestamp))
 }
 
-console.log(timestamp(), "client connecting...")
-messenger.connect(() => credentials).then(onConnected)
+console.log(timestamp(), "messenger connecting...")
+let context = {timestamp: moment()}
+messenger.connect(() => credentials).then(() => onConnected(context))
 
 messenger.on("connect_failed", () => {
   Q.Promise((resolve) => setTimeout(resolve, RECONNECT_TIMEOUT_MILLIS)).then(() => {
     console.log(timestamp(), "client reconnecting...")
-    messenger.connect(() => credentials).then(onConnected)
+    let context = {timestamp: moment()}
+    messenger.connect(() => credentials).then(() => onConnected(context))
   })
 })
 
 //-------------------------------------------------------------------------------------------------
 // MESSAGES.
 //-------------------------------------------------------------------------------------------------
+
+const COMMAND_BOT = "bot"
+const COMMAND_QUOTE = "quote"
+
+const BOT_CONVERSATIONS = "BOT_CONVERSATIONS"
+const QUOTES_STORED = "QUOTES_STORED"
+const QUOTES_PENDING = "QUOTES_PENDING"
 
 let buildMessage = (text) => {
   let builder = new Client.MessageBuilder()
@@ -78,49 +86,26 @@ let matchCommand = (...commands) => {
     _.toLower(_.trim(message)) === command : _.startsWith(_.toLower(_.trim(message)), command))
 }
 
-const COMMAND_BOT = "bot"
-const COMMAND_QUOTE = "quote"
+let onMessage = (event, context) => { 
+  let isAdmin = context.sender_id === context.self_user_id
+  let isDebug = context.is_debug
+  let isEnabled = _.includes(store.getItemSync(BOT_CONVERSATIONS) || [], context.conversation_id)
 
-const BOT_CONVERSATIONS = "BOT_CONVERSATIONS"
-const QUOTES_STORED = "QUOTES_STORED"
-const QUOTES_PENDING = "QUOTES_PENDING"
-
-messenger.on("chat_message", event => {
-  let self_user_id = event.self_event_state.user_id.chat_id
-  let conversation_id = event.conversation_id.id
-  let sender_id = event.sender_id.chat_id
-  let message_segments = event.chat_message.message_content.segment
-
-  let isAdmin = sender_id === self_user_id
-  let isDebug = false
-  let isEnabled = _.includes(store.getItemSync(BOT_CONVERSATIONS) || [], conversation_id)
-
-  // hastebotDebug.ts
-  if (isDebug) {
-    console.log("self_user_id:", self_user_id)
-    console.log("conversation_id:", conversation_id)
-    console.log("sender_id:", sender_id)
-    console.log("message segments", message_segments)
-  }
-
-  let message = readMessageText(message_segments)
-  if (isEnabled) {
-    console.log(sender_id, JSON.stringify(message))
-  }
+  let message = readMessageText(context.message_segments)
   
   // hastebotConfig.ts
   if (isAdmin) {
     if (matchCommand(`!${COMMAND_BOT} on`, 
                      `! ${COMMAND_BOT} on`)(message)) {
       store.setItemSync(BOT_CONVERSATIONS,
-        _.uniq(_.concat(store.getItemSync(BOT_CONVERSATIONS) || [], conversation_id)))
-      messenger.sendchatmessage(conversation_id, buildMessage("is now enabled"))
+        _.uniq(_.concat(store.getItemSync(BOT_CONVERSATIONS) || [], context.conversation_id)))
+      messenger.sendchatmessage(context.conversation_id, buildMessage("is now enabled"))
     }
     else if (matchCommand(`!${COMMAND_BOT} off`, 
                           `! ${COMMAND_BOT} off`)(message)) {
       store.setItemSync(BOT_CONVERSATIONS,
-        _.uniq(_.without(store.getItemSync(BOT_CONVERSATIONS) || [], conversation_id)))
-      messenger.sendchatmessage(conversation_id, buildMessage("is now disabled"))
+        _.uniq(_.without(store.getItemSync(BOT_CONVERSATIONS) || [], context.conversation_id)))
+      messenger.sendchatmessage(context.conversation_id, buildMessage("is now disabled"))
     }
   }
 
@@ -133,7 +118,7 @@ messenger.on("chat_message", event => {
                      `? ${COMMAND_QUOTE}`, 
                      `${COMMAND_QUOTE}?`, 
                      `!${COMMAND_QUOTE} count`)(message)) {
-      messenger.sendchatmessage(conversation_id, buildMessage(
+      messenger.sendchatmessage(context.conversation_id, buildMessage(
         "has " + quotes.length + " quotes available and " + quotesPending.length + " pending"
       ))
     }
@@ -141,17 +126,42 @@ messenger.on("chat_message", event => {
                           `! ${COMMAND_QUOTE}`, 
                           `${COMMAND_QUOTE}!`)(message)) {
       let quote = _.sample(quotes)
-      messenger.sendchatmessage(conversation_id, buildMessage(quote))
+      messenger.sendchatmessage(context.conversation_id, buildMessage(quote))
     }
     else if (matchCommand(`${COMMAND_QUOTE}`)(message)) {
       let quote = message
       let quotesPendingNext = _.uniq(_.concat(quotesPending, message))
       if (quotesPending.length !== quotesPendingNext.length) {
         store.setItemSync(QUOTES_PENDING, quotesPendingNext)
-        messenger.sendchatmessage(conversation_id, buildMessage(
+        messenger.sendchatmessage(context.conversation_id, buildMessage(
           "has " + quotesPendingNext.length + " new quotes pending"
         ))
       }
     }
   }
+  
+  if (isEnabled) {
+    console.log(timestamp(), JSON.stringify(message), duration(context.timestamp))
+  }
+}
+
+messenger.on("chat_message", event => {
+  let context = {
+    self_user_id: event.self_event_state.user_id.chat_id,
+    conversation_id: event.conversation_id.id,
+    sender_id: event.sender_id.chat_id,
+    message_segments: event.chat_message.message_content.segment,
+    is_debug: DEBUG_MODE,
+    timestamp: moment()
+  }
+
+  // hastebotDebug.ts
+  if (context.is_debug) {
+    console.log("self_user_id:", context.self_user_id)
+    console.log("conversation_id:", context.conversation_id)
+    console.log("sender_id:", context.sender_id)
+    console.log("message segments", context.message_segments)
+  }
+
+  onMessage(event, context)
 })
