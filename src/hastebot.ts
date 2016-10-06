@@ -9,6 +9,7 @@ import * as moment from "moment"
 
 let Client = require("hangupsjs")
 let storage = require("node-persist")
+let humanizeDuration = require("humanize-duration")
 
 //-------------------------------------------------------------------------------------------------
 // CONNECTIONS.
@@ -17,8 +18,8 @@ let storage = require("node-persist")
 const DEBUG_MODE = false
 const RECONNECT_TIMEOUT_MILLIS = 3000
 
-let timestamp = () => `<${moment().format("YYYY-MM-DD hh:mm:ss")}>`
-let duration = (start) => `(${moment().diff(start, "ms")} ms)`
+let timestamp = () => `<${moment().format("YYYY-MM-DD HH:mm:ss")}>`
+let duration = (start: moment.Moment) => `(${moment().diff(start, "ms")} ms)`
 
 let messenger = new Client({
   cookiespath: path.resolve(__dirname, "../data/cookies.json"),
@@ -30,29 +31,36 @@ store.initSync({
   dir: path.resolve(__dirname, "../data/store")
 })
 
-//client.loglevel("info")
-//client.logout()
+// messenger.loglevel("info")
+if (_.includes(process.argv, "--logout")) {
+  messenger.logout()
+}
 store.persistSync()
 
 let credentials = {
   auth: Client.authStdin
 }
 
-let onConnected = (context) => {
+let connectMessenger = (messenger) => {
+  console.log(timestamp(), "messenger connecting...")
+  let context = {timestamp: moment()}
+  messenger.connect(() => credentials).then(() => onMessengerConnected(context))
+}
+
+let reconnectMessenger = (messenger) => {
+  Q.Promise((resolve) => setTimeout(resolve, RECONNECT_TIMEOUT_MILLIS)).then(() => {
+    console.log(timestamp(), "messenger reconnecting...")
+    let context = {timestamp: moment()}
+    messenger.connect(() => credentials).then(() => onMessengerConnected(context))
+  })
+}
+
+let onMessengerConnected = (context) => {
   console.log(timestamp(), "messenger connected", duration(context.timestamp))
 }
 
-console.log(timestamp(), "messenger connecting...")
-let context = {timestamp: moment()}
-messenger.connect(() => credentials).then(() => onConnected(context))
-
-messenger.on("connect_failed", () => {
-  Q.Promise((resolve) => setTimeout(resolve, RECONNECT_TIMEOUT_MILLIS)).then(() => {
-    console.log(timestamp(), "client reconnecting...")
-    let context = {timestamp: moment()}
-    messenger.connect(() => credentials).then(() => onConnected(context))
-  })
-})
+connectMessenger(messenger)
+messenger.on("connect_failed", () => reconnectMessenger(messenger))
 
 //-------------------------------------------------------------------------------------------------
 // MESSAGES.
@@ -99,14 +107,14 @@ let onMessage = (event, context) => {
                      `! ${COMMAND_BOT} on`)(message)) {
       store.setItemSync(BOT_CONVERSATIONS,
         _.uniq(_.concat(store.getItemSync(BOT_CONVERSATIONS) || [], context.conversation_id)))
-      messenger.sendchatmessage(context.conversation_id, buildMessage("is now enabled"))
+      messenger.sendchatmessage(context.conversation_id, buildMessage("is now enabled."))
       isEnabled = true
     }
     else if (matchCommand(`!${COMMAND_BOT} off`, 
                           `! ${COMMAND_BOT} off`)(message)) {
       store.setItemSync(BOT_CONVERSATIONS,
         _.uniq(_.without(store.getItemSync(BOT_CONVERSATIONS) || [], context.conversation_id)))
-      messenger.sendchatmessage(context.conversation_id, buildMessage("is now disabled"))
+      messenger.sendchatmessage(context.conversation_id, buildMessage("is now disabled."))
     }
   }
 
@@ -120,7 +128,7 @@ let onMessage = (event, context) => {
                      `${COMMAND_QUOTE}?`, 
                      `!${COMMAND_QUOTE} count`)(message)) {
       messenger.sendchatmessage(context.conversation_id, buildMessage(
-        "has " + quotes.length + " quotes available and " + quotesPending.length + " pending"
+        "has " + quotes.length + " quotes available and " + quotesPending.length + " pending."
       ))
     }
     else if (matchCommand(`!${COMMAND_QUOTE}`, 
@@ -135,9 +143,24 @@ let onMessage = (event, context) => {
       if (quotesPending.length !== quotesPendingNext.length) {
         store.setItemSync(QUOTES_PENDING, quotesPendingNext)
         messenger.sendchatmessage(context.conversation_id, buildMessage(
-          "has " + quotesPendingNext.length + " new quotes pending"
+          "has " + quotesPendingNext.length + " new quotes pending."
         ))
       }
+    }
+    
+    else if (matchCommand(`!time`, "time!")(message)) {
+      let arrival = moment("2017-01-01T00:00:00+0200")
+      let duration = arrival.diff(moment())
+      // let durationText = moment.duration(duration).humanize()
+      let durationText = humanizeDuration(moment.duration(duration).asMilliseconds(), {
+        units: ["d", "h"],
+        round: true,
+        conjunction: " and ",
+        serialComma: false
+      })
+      messenger.sendchatmessage(context.conversation_id, buildMessage(
+        durationText + " left until new year."
+      ))
     }
   }
   
